@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <netdb.h>
+#include <pthread.h>
 
 #include "framemanager.h"
 
@@ -17,6 +18,36 @@
 
 using namespace std;
 using namespace hw4;
+
+struct threadData {
+	int sockID;
+};
+
+//Client thread
+void *ClientThread(void *arg) {
+	threadData data = *(threadData *)arg;
+	free(arg);
+	char buffer[BUFFER_SIZE];
+	int n;
+	do {
+		n = recv(data.sockID, buffer, BUFFER_SIZE, 0);
+		//Socket unable to receive from
+		if (n < 0) {
+			cerr << "Failed to receive from socket" << endl;
+		}
+		//Socket closed
+		else if (n == 0) {
+			cout << "[thread " << pthread_self() << "] Client closed its socket....terminating" << endl;
+		}
+		//Message receive
+		else {
+			cout << "[thread " << pthread_self() << "] A message was received!" << endl;
+		}
+	} while (n > 0);
+	close(newsock);
+	pthread_exit(&pthread_self());
+	return NULL;
+}
 
 int main() {
 	FrameManager frameManager;
@@ -65,8 +96,7 @@ int main() {
 	struct sockaddr_in client;
 	int clientSize = sizeof(client);
 
-	int pid;
-	char buffer[BUFFER_SIZE];
+	int tid;
 
 	while (1) {
 		int newsock = accept(sock, (struct sockaddr *)&client, (socklen_t*)&clientSize);
@@ -80,27 +110,18 @@ int main() {
 		else {
 			cout << "Received incoming connection from " << hostName << endl;
 		}
-		//Fork the new socket
-		pid = fork();
-		//Client fork doesn't exist
-		if (pid < 0) {
-			cerr << "Could not fork client socket. Exiting..." << endl;
+		//Thread the new socket
+		pthread_t id;
+		threadData arg;
+		arg.sockID = newsock;
+		tid = pthread_create(&id, NULL, ClientThread, arg);
+		//Client thread doesn't exist
+		if (tid == 0) {
+			cerr << "Could not create client thread. Exiting..." << endl;
 			exit(EXIT_FAILURE);
 		}
-		//Client thread
-		else if (pid == 0) {
-			int n;
-			do {
-				n = 0; //***TEMP***
-			} while (n > 0);
-			cout << "Client closed its socket....terminating" << endl;
-			close(newsock);
-			exit(EXIT_SUCCESS);
-		}
 		//Server
-		else {
-			close(newsock);
-		}
+		close(newsock);
 	}
 	close(sock);
 	
