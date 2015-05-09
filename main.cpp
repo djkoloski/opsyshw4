@@ -66,6 +66,16 @@ void *ClientThread(void *arg)
 				char *rest = strchr(token, 0) + 1;
 				
 				cout << "[thread " << pthread_self() << "] READ " << length  << " bytes from " << offset << " bytes into " << name << ": '" << rest << "'!" << endl;
+				int byteStart = offset;
+				int byteEnd = byteStart + length;
+				while (byteStart < byteEnd)
+				{
+					char *fileData;
+					int len;
+					data.frameManager.get(name, byteStart, byteEnd, fileData, len);
+					printf("%s\n", fileData);
+					delete[] fileData;
+				}
 			}
 		}
 	} while (n > 0);
