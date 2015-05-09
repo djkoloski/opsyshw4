@@ -12,6 +12,7 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <string>
+#include <sstream>
 
 #include "framemanager.h"
 
@@ -51,16 +52,20 @@ void *ClientThread(void *arg)
 		//Message receive
 		else
 		{
-			char *token = strtok(buffer, " ");
+			char *head = strtok(buffer, "\r\n");
+			cout << "[thread " << pthread_self() << "] Rcvd: " << head << endl;
+			
+			char *tail = buffer + strlen(head) + 2;
+			char *token = strtok(head, " ");
 			
 			if (!strcmp(token, "READ"))
 			{
+				// TODO add errors if stuff is wrong
 				token = strtok(NULL, " ");
 				string name = ".storage/" + string(token);
 				token = strtok(NULL, " ");
-				// TODO add errors if stuff is wrong
 				int offset = atoi(token);
-				token = strtok(NULL, "\n");
+				token = strtok(NULL, "\r\n");
 				int length = atoi(token);
 				
 				char *rest = strchr(token, 0) + 1;
@@ -70,12 +75,80 @@ void *ClientThread(void *arg)
 				int byteEnd = byteStart + length;
 				while (byteStart < byteEnd)
 				{
-					char *fileData;
+					char *fileData = new char[BUFFER_SIZE + 1];
 					int len;
-					data.frameManager.get(name, byteStart, byteEnd, fileData, len);
-					printf("%s\n", fileData);
-					delete[] fileData;
+					
+					stringstream stream;
+					switch (data.frameManager.get(name, byteStart, byteEnd, fileData, len))
+					{
+						case 0:
+							fileData[len] = 0;
+							stream << "ACK " << len << "\n" << fileData << "\n";
+							delete[] fileData;
+							
+							cout << "[thread " << pthread_self() << "] Sent: ACK " << len << endl;
+							cout << "[thread " << pthread_self() << "] Transferred " << len << " bytes from offset " << byteStart << endl;
+							break;
+						case 1:
+							stream << "ERROR: NO SUCH FILE" << endl;
+							
+							cout << "[thread " << pthread_self() << "] ERROR: No such file!" << endl;
+							
+							byteStart = byteEnd;
+							break;
+						case 2:
+							stream << "ERROR: INVALID BYTE RANGE" << endl;
+							
+							cout << "[thread " << pthread_self() << "] ERROR: Invalid byte range!" << endl;
+							
+							byteStart = byteEnd;
+							break;
+						default:
+							stream << "ERROR: UNKNOWN ERROR" << endl;
+							
+							cout << "[thread " << pthread_self() << "] ERROR: Unknown error!" << endl;
+							
+							byteStart = byteEnd;
+							break;
+					}
+					
+					string message = stream.str();
+					
+					send(data.sockID, message.c_str(), message.size(), 0);
+					
+					byteStart += len;
 				}
+			}
+			else if (!strcmp(token, "DELETE"))
+			{
+				// TODO add errors if stuff is wrong
+				token = strtok(NULL, "\r\n");
+				string name = ".storage/" + string(token, strlen(token));
+				
+				stringstream stream;
+				switch (data.frameManager.removeFile(name))
+				{
+					case 0:
+						stream << "ACK" << endl;
+						cout << "[thread " << pthread_self() << "] Sent: ACK" << endl;
+						break;
+					case 1:
+						stream << "ERROR: NO SUCH FILE" << endl;
+						cout << "[thread " << pthread_self() << "] ERROR: No such file!" << endl;
+						break;
+					default:
+						stream << "ERROR: UNKNOWN ERROR" << endl;
+						cout << "[thread " << pthread_self() << "] ERROR: Unknown error!" << endl;
+						break;
+				}
+				
+				string message = stream.str();
+				
+				send(data.sockID, message.c_str(), message.size(), 0);
+			}
+			else if (!strcmp(token, "DIR"))
+			{
+				// TODO: DIR
 			}
 		}
 	} while (n > 0);
@@ -86,8 +159,19 @@ void *ClientThread(void *arg)
 	return NULL;
 }
 
-int main()
+int main(int argc, char **argv)
 {
+	unsigned short port = 8765;
+	
+	for (int i = 0; i < argc; ++i)
+	{
+		if (!strcmp(argv[i], "-p"))
+		{
+			port = atoi(argv[i + 1]);
+			++i;
+		}
+	}
+	
 	FrameManager frameManager;
 	
 	//Create a listener socket
@@ -102,7 +186,6 @@ int main()
 	struct sockaddr_in server;
 	server.sin_family = PF_INET;
 	server.sin_addr.s_addr = INADDR_ANY;
-	unsigned short port = 8765;
 	server.sin_port = htons(port);
 	
 	//Bind socket to address

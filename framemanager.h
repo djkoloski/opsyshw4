@@ -31,6 +31,8 @@ namespace hw4
 					void lock();
 					void unlock();
 					
+					const map<int, int> &getPages() const;
+					int pageCount() const;
 					void usePage(int page);
 					int getVictim();
 					bool isPageLoaded(int page) const;
@@ -87,6 +89,13 @@ namespace hw4
 			 *   2: Invalid byte range
 			 */
 			int loadPage(const string &name, int page, int lastByteQ);
+			
+			/* Removes the given file
+			 * Return values:
+			 *   0: Success
+			 *   1: No such file
+			 */
+			int removeFile(const string &name);
 			
 			/* Gets the next page starting at byteStart and ending at byteEnd and fills data with 
 			 * Returns:

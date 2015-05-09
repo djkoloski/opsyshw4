@@ -29,6 +29,14 @@ namespace hw4
 	{
 		pthread_mutex_unlock(&mutex);
 	}
+	const map<int, int> &FrameManager::FileInfo::getPages() const
+	{
+		return pages;
+	}
+	int FrameManager::FileInfo::pageCount() const
+	{
+		return pages.size();
+	}
 	void FrameManager::FileInfo::usePage(int page)
 	{
 		list<int>::iterator i = find(recency.begin(), recency.end(), page);
@@ -144,7 +152,7 @@ namespace hw4
 	int FrameManager::loadPage(const string &name, int page, int lastByteQ)
 	{
 		if (files.count(name) && files[name].isPageLoaded(page))
-			return true;
+			return 0;
 		
 		int byteStart = page * sizeFrame;
 		int byteEnd = byteStart + sizeFrame;
@@ -171,29 +179,35 @@ namespace hw4
 		
 		file.unlock();
 		
-		for (int i = 0; i < frames.size(); ++i)
+		if (file.pageCount() < nFramesPerFile)
 		{
-			frames[i].lock();
-			if (!frames[i].isAllocated())
+			for (int i = 0; i < frames.size(); ++i)
 			{
-				frames[i].allocate();
-				frames[i].setData(data);
+				frames[i].lock();
+				if (!frames[i].isAllocated())
+				{
+					frames[i].allocate();
+					frames[i].setData(data);
+					frames[i].unlock();
+				
+					delete[] data;
+				
+					file.mapPage(page, i);
+					cout << "[thread " << pthread_self() << "] Allocated page " << page << " to frame " << i << endl;
+					return 0;
+				}
 				frames[i].unlock();
-				
-				delete[] data;
-				
-				file.mapPage(page, i);
-				cout << "[thread " << pthread_self() << "] Allocated page " << page << " to frame " << i << endl;
-				return 0;
 			}
-			frames[i].unlock();
 		}
 		
 		string victim;
 		int vPage = -1;
 		do
 		{
-			victim = recency.back();
+			if (file.pageCount() >= nFramesPerFile)
+				victim = name;
+			else
+				victim = recency.back();
 			recency.pop_back();
 			vPage = files[victim].getVictim();
 			if (files.count(victim) != 0 && vPage != -1)
@@ -203,6 +217,7 @@ namespace hw4
 		int vFrame = files[victim].getPageFrame(vPage);
 		
 		frames[vFrame].lock();
+		files[victim].unmapPage(vPage);
 		frames[vFrame].deallocate();
 		frames[vFrame].allocate();
 		frames[vFrame].setData(data);
@@ -215,8 +230,33 @@ namespace hw4
 		
 		return 0;
 	}
+	int FrameManager::removeFile(const string &name)
+	{
+		struct stat buffer;
+		int status = lstat(name.c_str(), &buffer);
+		if (status != 0)
+			return 1;
+		
+		const map<int, int> &pages = files[name].getPages();
+		
+		for (map<int, int>::const_iterator i = pages.begin(); i != pages.end(); ++i)
+		{
+			cout << "[thread " << pthread_self() << "] Deallocated frame " << i->second << endl;
+			frames[i->second].lock();
+			frames[i->second].deallocate();
+			frames[i->second].unlock();
+		}
+		
+		remove(name.c_str());
+		files.erase(name);
+		
+		return 0;
+	}
 	int FrameManager::get(const string &name, int byteStart, int byteEnd, char *&data, int &length)
 	{
+		if (byteStart < 0 || byteEnd < 0)
+			return 2;
+		
 		int page = byteStart / sizeFrame;
 		int status = loadPage(name, page, byteEnd);
 		if (status != 0)
