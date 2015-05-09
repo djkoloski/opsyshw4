@@ -21,6 +21,8 @@ namespace hw4
 					pthread_mutex_t mutex;
 					// A map from the page number to the loaded frame
 					map<int, int> pages;
+					// The pages in the order they were most recently used (first is most recently,last is least recently)
+					list<int> recency;
 					
 				public:
 					FileInfo();
@@ -29,7 +31,8 @@ namespace hw4
 					void lock();
 					void unlock();
 					
-					int getVictim() const;
+					void usePage(int page);
+					int getVictim();
 					bool isPageLoaded(int page) const;
 					int getPageFrame(int page) const;
 					void mapPage(int page, int frame);
@@ -76,7 +79,7 @@ namespace hw4
 			~FrameManager();
 			
 			// Makes the given file the most recently used
-			void useFile(const string &name);
+			void usePage(const string &name, int page);
 			/* Loads the given page of the given file
 			 * Return values:
 			 *   0: Success

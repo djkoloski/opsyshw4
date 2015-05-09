@@ -21,22 +21,30 @@ using namespace hw4;
 int main() {
 	FrameManager frameManager;
 	
-	char *data;
-	int length;
-	switch (frameManager.get(".storage/abc.txt", 0, 1024 * 4, data, length))
+	int byteStart = 1;
+	int byteEnd = 1024 * 40 + 1;
+	while (byteStart < byteEnd)
 	{
-		case 0:
-			printf("%s\n", data);
-			delete[] data;
-			break;
-		case 1:
-			printf("No such file!\n");
-			break;
-		case 2:
-			printf("Invalid byte range\n");
-			break;
-		default:
-			break;
+		char *data;
+		int length;
+		switch (frameManager.get(".storage/abc.txt", byteStart, byteEnd, data, length))
+		{
+			case 0:
+				printf("Got %i bytes\n", length);
+				delete[] data;
+				byteStart += length;
+				break;
+			case 1:
+				printf("No such file!\n");
+				byteEnd = -1;
+				break;
+			case 2:
+				printf("Invalid byte range\n");
+				byteEnd = -1;
+				break;
+			default:
+				break;
+		}
 	}
 	
 	//Create a listener socket
