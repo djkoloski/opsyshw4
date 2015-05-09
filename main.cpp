@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <string>
 
 #include "framemanager.h"
 
@@ -19,84 +20,89 @@
 using namespace std;
 using namespace hw4;
 
-struct threadData {
-	int sockID;
+class ThreadData
+{
+	public:
+		int sockID;
+		FrameManager &frameManager;
+		
+		ThreadData(int s, FrameManager &f) :
+			sockID(s),
+			frameManager(f)
+		{ }
 };
 
 //Client thread
-void *ClientThread(void *arg) {
-	threadData data = *(threadData *)arg;
-	free(arg);
+void *ClientThread(void *arg)
+{
+	ThreadData data = *(ThreadData *)arg;
+	delete[] (ThreadData *)arg;
+	
 	char buffer[BUFFER_SIZE];
 	int n;
 	do {
 		n = recv(data.sockID, buffer, BUFFER_SIZE, 0);
 		//Socket unable to receive from
-		if (n < 0) {
-			cerr << "Failed to receive from socket" << endl;
-		}
+		if (n == -1)
+			cerr << "[thread " << pthread_self() << "] Encountered an error while waiting for client data" << endl;
 		//Socket closed
-		else if (n == 0) {
+		else if (n == 0)
 			cout << "[thread " << pthread_self() << "] Client closed its socket....terminating" << endl;
-		}
 		//Message receive
-		else {
-			cout << "[thread " << pthread_self() << "] A message was received!" << endl;
+		else
+		{
+			char *token = strtok(buffer, " ");
+			
+			if (!strcmp(token, "READ"))
+			{
+				token = strtok(NULL, " ");
+				string name = ".storage/" + string(token);
+				token = strtok(NULL, " ");
+				// TODO add errors if stuff is wrong
+				int offset = atoi(token);
+				token = strtok(NULL, "\n");
+				int length = atoi(token);
+				
+				char *rest = strchr(token, 0) + 1;
+				
+				cout << "[thread " << pthread_self() << "] READ " << length  << " bytes from " << offset << " bytes into " << name << ": '" << rest << "'!" << endl;
+			}
 		}
 	} while (n > 0);
-	close(newsock);
-	pthread_exit(&pthread_self());
+	
+	close(data.sockID);
+	pthread_exit(NULL);
+	
 	return NULL;
 }
 
-int main() {
+int main()
+{
 	FrameManager frameManager;
-	
-	int byteStart = 1;
-	int byteEnd = 1024 * 40 + 1;
-	while (byteStart < byteEnd)
-	{
-		char *data;
-		int length;
-		switch (frameManager.get(".storage/abc.txt", byteStart, byteEnd, data, length))
-		{
-			case 0:
-				printf("Got %i bytes\n", length);
-				delete[] data;
-				byteStart += length;
-				break;
-			case 1:
-				printf("No such file!\n");
-				byteEnd = -1;
-				break;
-			case 2:
-				printf("Invalid byte range\n");
-				byteEnd = -1;
-				break;
-			default:
-				break;
-		}
-	}
 	
 	//Create a listener socket
 	int sock = socket(PF_INET, SOCK_STREAM, 0);
-	if (sock < 0) {
+	if (sock < 0)
+	{
 		cerr << "Failed to create a listener socket. Exiting..." << endl;
 		exit(EXIT_FAILURE);
 	}
+	
 	//Socket address struct
 	struct sockaddr_in server;
 	server.sin_family = PF_INET;
 	server.sin_addr.s_addr = INADDR_ANY;
-	//Assign port
 	unsigned short port = 8765;
 	server.sin_port = htons(port);
+	
 	//Bind socket to address
 	int serverSize = sizeof(server);
-	if (bind(sock, (struct sockaddr *)&server, serverSize) < 0) {
+	if (bind(sock, (struct sockaddr *)&server, serverSize) < 0)
+	{
 		cerr << "Failed to bind socket. Exiting..." << endl;
 		exit(EXIT_FAILURE);
 	}
+	
 	//Listen for up to SOMAXCONN clients
 	listen(sock, 128);
 	cout << "Listening on port " << port << endl;
@@ -104,32 +110,33 @@ int main() {
 	struct sockaddr_in client;
 	int clientSize = sizeof(client);
 
-	int tid;
+	int status;
 
-	while (1) {
+	while (true)
+	{
 		int newsock = accept(sock, (struct sockaddr *)&client, (socklen_t*)&clientSize);
+		
 		//Get hostname
 		char hostName[NI_MAXHOST];
 		struct in_addr ipv4addr;
 		inet_pton(AF_INET, inet_ntoa(client.sin_addr), &ipv4addr);
-		if (getnameinfo((const sockaddr *)&client, clientSize, hostName, sizeof(hostName), NULL, 0, NI_NAMEREQD) != 0) {
+		
+		if (getnameinfo((const sockaddr *)&client, clientSize, hostName, sizeof(hostName), NULL, 0, NI_NAMEREQD) != 0)
 			cout << "Received incoming connection from unresolved host" << endl;
-		}
-		else {
+		else
 			cout << "Received incoming connection from " << hostName << endl;
-		}
+		
 		//Thread the new socket
 		pthread_t id;
-		threadData arg;
-		arg.sockID = newsock;
-		tid = pthread_create(&id, NULL, ClientThread, arg);
+		ThreadData *arg = new ThreadData(newsock, frameManager);
+		status = pthread_create(&id, NULL, ClientThread, arg);
+		
 		//Client thread doesn't exist
-		if (tid == 0) {
+		if (status != 0)
+		{
 			cerr << "Could not create client thread. Exiting..." << endl;
 			exit(EXIT_FAILURE);
 		}
-		//Server
-		close(newsock);
 	}
 	close(sock);
 	
