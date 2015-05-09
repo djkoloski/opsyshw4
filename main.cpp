@@ -1,5 +1,6 @@
 /*Main*/
 
+#include <iostream>
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -10,11 +11,34 @@
 #include <stdlib.h>
 #include <netdb.h>
 
+#include "framemanager.h"
+
 #define BUFFER_SIZE 1024
 
 using namespace std;
+using namespace hw4;
 
 int main() {
+	FrameManager frameManager;
+	
+	char *data;
+	int length;
+	switch (frameManager.get(".storage/abc.txt", 0, 1024 * 4, data, length))
+	{
+		case 0:
+			printf("%s\n", data);
+			delete[] data;
+			break;
+		case 1:
+			printf("No such file!\n");
+			break;
+		case 2:
+			printf("Invalid byte range\n");
+			break;
+		default:
+			break;
+	}
+	
 	//Create a listener socket
 	int sock = socket(PF_INET, SOCK_STREAM, 0);
 	if (sock < 0) {
@@ -50,7 +74,7 @@ int main() {
 		char hostName[NI_MAXHOST];
 		struct in_addr ipv4addr;
 		inet_pton(AF_INET, inet_ntoa(client.sin_addr), &ipv4addr);
-		if (getnameinfo(client, clientSize, hostName, sizeof(hostName), NULL, 0, NI_NAMEREQD) != 0) {
+		if (getnameinfo((const sockaddr *)&client, clientSize, hostName, sizeof(hostName), NULL, 0, NI_NAMEREQD) != 0) {
 			cout << "Received incoming connection from unresolved host" << endl;
 		}
 		else {
@@ -70,6 +94,8 @@ int main() {
 				n = 0; //***TEMP***
 			} while (n > 0);
 			cout << "Client closed its socket....terminating" << endl;
+			close(newsock);
+			exit(EXIT_SUCCESS);
 		}
 		//Server
 		else {
@@ -77,5 +103,6 @@ int main() {
 		}
 	}
 	close(sock);
+	
 	return EXIT_SUCCESS;
 }
