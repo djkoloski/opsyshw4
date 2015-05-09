@@ -12,7 +12,8 @@ namespace hw4
 {
 	FrameManager::FileInfo::FileInfo() :
 		mutex(),
-		pages()
+		pages(),
+		recency()
 	{
 		pthread_mutex_init(&mutex, NULL);
 	}
@@ -28,11 +29,24 @@ namespace hw4
 	{
 		pthread_mutex_unlock(&mutex);
 	}
-	int FrameManager::FileInfo::getVictim() const
+	void FrameManager::FileInfo::usePage(int page)
 	{
-		if (pages.size() == 0)
-			return -1;
-		return pages.begin()->first;
+		list<int>::iterator i = find(recency.begin(), recency.end(), page);
+		if (i != recency.end())
+			recency.erase(i);
+		recency.push_front(page);
+	}
+	int FrameManager::FileInfo::getVictim()
+	{
+		while (true)
+		{
+			if (recency.size() == 0)
+				return -1;
+			int last = recency.back();
+			recency.pop_back();
+			if (pages.count(last))
+				return last;
+		}
 	}
 	bool FrameManager::FileInfo::isPageLoaded(int page) const
 	{
@@ -118,12 +132,14 @@ namespace hw4
 		files.clear();
 		recency.clear();
 	}
-	void FrameManager::useFile(const string &name)
+	void FrameManager::usePage(const string &name, int page)
 	{
 		list<string>::iterator i = find(recency.begin(), recency.end(), name);
 		if (i != recency.end())
 			recency.erase(i);
 		recency.push_front(name);
+		
+		files[name].usePage(page);
 	}
 	int FrameManager::loadPage(const string &name, int page, int lastByteQ)
 	{
@@ -137,14 +153,11 @@ namespace hw4
 		if (status != 0)
 			return 1;
 		
-		if (buffer.st_size <= byteStart)
+		if (buffer.st_size <= byteStart || lastByteQ > buffer.st_size)
 			return 2;
 		
 		if (buffer.st_size < byteEnd)
 			byteEnd = buffer.st_size;
-		
-		if (lastByteQ > byteEnd)
-			return 2;
 		
 		char *data = new char[sizeFrame];
 		
@@ -170,7 +183,8 @@ namespace hw4
 				delete[] data;
 				
 				file.mapPage(page, i);
-				return i;
+				cout << "[thread " << pthread_self() << "] Allocated page " << page << " to frame " << i << endl;
+				return 0;
 			}
 			frames[i].unlock();
 		}
@@ -181,11 +195,9 @@ namespace hw4
 		{
 			victim = recency.back();
 			recency.pop_back();
-			if (files.count(victim) != 0 && files[victim].getVictim() != -1)
-			{
-				vPage = files[victim].getVictim();
+			vPage = files[victim].getVictim();
+			if (files.count(victim) != 0 && vPage != -1)
 				break;
-			}
 		}
 		while (vPage == -1);
 		int vFrame = files[victim].getPageFrame(vPage);
@@ -218,6 +230,8 @@ namespace hw4
 		int frame = file.getPageFrame(page);
 		data = new char[sizeFrame];
 		frames[frame].getData(data);
+		
+		usePage(name, page);
 		
 		return 0;
 	}
