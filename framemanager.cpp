@@ -105,9 +105,9 @@ namespace hw4
 	{
 		allocated = false;
 	}
-	void FrameManager::FrameInfo::getData(char *dest)
+	void FrameManager::FrameInfo::getData(char *dest, int offset)
 	{
-		memcpy(dest, begin, sizeFrame);
+		memcpy(dest, begin + offset, sizeFrame - offset);
 	}
 	void FrameManager::FrameInfo::setData(char *source)
 	{
@@ -269,7 +269,7 @@ namespace hw4
 		FileInfo file = files[name];
 		int frame = file.getPageFrame(page);
 		data = new char[sizeFrame];
-		frames[frame].getData(data);
+		frames[frame].getData(data, byteStart);
 		
 		usePage(name, page);
 		

@@ -13,6 +13,8 @@
 #include <pthread.h>
 #include <string>
 #include <sstream>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "framemanager.h"
 
@@ -123,13 +125,15 @@ void *ClientThread(void *arg)
 			{
 				// TODO add errors if stuff is wrong
 				token = strtok(NULL, "\r\n");
-				string name = ".storage/" + string(token, strlen(token));
+				string fileName = string(token, strlen(token));
+				string name = ".storage/" + fileName;
 				
 				stringstream stream;
 				switch (data.frameManager.removeFile(name))
 				{
 					case 0:
 						stream << "ACK" << endl;
+						cout << "[thread " << pthread_self() << "] Deleted " << fileName << " file" << endl;
 						cout << "[thread " << pthread_self() << "] Sent: ACK" << endl;
 						break;
 					case 1:
@@ -148,28 +152,64 @@ void *ClientThread(void *arg)
 			}
 			else if (!strcmp(token, "DIR"))
 			{
-				// TODO: DIR
+				stringstream stream;
+				int fileCount = 0;
+				DIR *dir;
+				struct dirent *ent;
+				if ((dir = opendir(".storage")) != NULL)
+				{
+					while ((ent = readdir(dir)) != NULL)
+					{
+						if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, ".."))
+							continue;
+						
+						++fileCount;
+						stream << ent->d_name << endl;
+					}
+					closedir(dir);
+					
+					string files = stream.str();
+					stream.str("");
+					stream << fileCount << endl << files;
+				}
+				else
+					stream << "ERROR: STORAGE DIRECTORY BROKEN" << endl;
+				
+				string message = stream.str();
+				
+				send(data.sockID, message.c_str(), message.size(), 0);
 			}
 			else if (!strcmp(token, "STORE") || !strcmp(token, "ADD"))
 			{
 				// TODO: Add error messages for invalid arguments
+				stringstream stream;
 				token = strtok(NULL, " ");
 				string name = ".storage/" + string(token);
-				struct stat buffer;
-				int status = lstat(name.c_str(), &buffer);
-				if (status == 0)
-				{
-					stream << "ERROR: FILE EXISTS" << endl;
-					cout << "[thread " << pthread_self() << "] Sent: ERROR FILE EXISTS" << endl;
-				}
+				token = strtok(NULL, " ");
+				int bytes = atoi(token);
+				int givenBytes = strlen(tail);
+				
+				if (bytes != givenBytes)
+					stream << "ERROR: INCORRECT NUMBER OF BYTES" << endl;
 				else
 				{
-					FILE* f = fopen(name, "w");
-					fprintf(f, "%s", tail);
-					stream << "ACK" << endl;
-					cout << "[thread " << pthread_self() << "] Transferred file (" << tail.size() << " bytes)" << endl;
-					cout << "[thread " << pthread_self() << "] Sent: ACK" << endl;
-					fclose(f);
+					struct stat buffer;
+					int status = lstat(name.c_str(), &buffer);
+					
+					if (status == 0)
+					{
+						stream << "ERROR: FILE EXISTS" << endl;
+						cout << "[thread " << pthread_self() << "] Sent: ERROR FILE EXISTS" << endl;
+					}
+					else
+					{
+						FILE* f = fopen(name.c_str(), "w");
+						fwrite(tail, sizeof(char), strlen(tail), f);
+						stream << "ACK" << endl;
+						cout << "[thread " << pthread_self() << "] Transferred file (" << strlen(tail) << " bytes)" << endl;
+						cout << "[thread " << pthread_self() << "] Sent: ACK" << endl;
+						fclose(f);
+					}
 				}
 
 				string message = stream.str();

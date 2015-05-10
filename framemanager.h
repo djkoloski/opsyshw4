@@ -59,7 +59,7 @@ namespace hw4
 					void allocate();
 					void deallocate();
 					
-					void getData(char *dest);
+					void getData(char *dest, int offset);
 					void setData(char *source);
 			};
 		private:
