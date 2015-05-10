@@ -70,7 +70,7 @@ void *ClientThread(void *arg)
 				
 				char *rest = strchr(token, 0) + 1;
 				
-				cout << "[thread " << pthread_self() << "] READ " << length  << " bytes from " << offset << " bytes into " << name << ": '" << rest << "'!" << endl;
+				//cout << "[thread " << pthread_self() << "] READ " << length  << " bytes from " << offset << " bytes into " << name << ": '" << rest << "'!" << endl;
 				int byteStart = offset;
 				int byteEnd = byteStart + length;
 				while (byteStart < byteEnd)
@@ -92,21 +92,21 @@ void *ClientThread(void *arg)
 						case 1:
 							stream << "ERROR: NO SUCH FILE" << endl;
 							
-							cout << "[thread " << pthread_self() << "] ERROR: No such file!" << endl;
+							cout << "[thread " << pthread_self() << "] Sent: ERROR NO SUCH FILE" << endl;
 							
 							byteStart = byteEnd;
 							break;
 						case 2:
 							stream << "ERROR: INVALID BYTE RANGE" << endl;
 							
-							cout << "[thread " << pthread_self() << "] ERROR: Invalid byte range!" << endl;
+							cout << "[thread " << pthread_self() << "] Sent: ERROR INVALID BYTE RANGE" << endl;
 							
 							byteStart = byteEnd;
 							break;
 						default:
 							stream << "ERROR: UNKNOWN ERROR" << endl;
 							
-							cout << "[thread " << pthread_self() << "] ERROR: Unknown error!" << endl;
+							cout << "[thread " << pthread_self() << "] Sent: ERROR UNKNOWN ERROR" << endl;
 							
 							byteStart = byteEnd;
 							break;
@@ -134,11 +134,11 @@ void *ClientThread(void *arg)
 						break;
 					case 1:
 						stream << "ERROR: NO SUCH FILE" << endl;
-						cout << "[thread " << pthread_self() << "] ERROR: No such file!" << endl;
+						cout << "[thread " << pthread_self() << "] Sent: ERROR NO SUCH FILE" << endl;
 						break;
 					default:
 						stream << "ERROR: UNKNOWN ERROR" << endl;
-						cout << "[thread " << pthread_self() << "] ERROR: Unknown error!" << endl;
+						cout << "[thread " << pthread_self() << "] Sent: ERROR UNKNOWN ERROR" << endl;
 						break;
 				}
 				
@@ -149,6 +149,32 @@ void *ClientThread(void *arg)
 			else if (!strcmp(token, "DIR"))
 			{
 				// TODO: DIR
+			}
+			else if (!strcmp(token, "STORE") || !strcmp(token, "ADD"))
+			{
+				// TODO: Add error messages for invalid arguments
+				token = strtok(NULL, " ");
+				string name = ".storage/" + string(token);
+				struct stat buffer;
+				int status = lstat(name.c_str(), &buffer);
+				if (status == 0)
+				{
+					stream << "ERROR: FILE EXISTS" << endl;
+					cout << "[thread " << pthread_self() << "] Sent: ERROR FILE EXISTS" << endl;
+				}
+				else
+				{
+					FILE* f = fopen(name, "w");
+					fprintf(f, "%s", tail);
+					stream << "ACK" << endl;
+					cout << "[thread " << pthread_self() << "] Transferred file (" << tail.size() << " bytes)" << endl;
+					cout << "[thread " << pthread_self() << "] Sent: ACK" << endl;
+					fclose(f);
+				}
+
+				string message = stream.str();
+
+				send(data.sockID, message.c_str(), message.size(), 0);
 			}
 		}
 	} while (n > 0);
