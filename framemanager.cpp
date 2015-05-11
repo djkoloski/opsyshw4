@@ -140,6 +140,20 @@ namespace hw4
 		files.clear();
 		recency.clear();
 	}
+	void FrameManager::lockFile(const string &name)
+	{
+		if (!files.count(name))
+			files[name] = FileInfo();
+		
+		files[name].lock();
+	}
+	void FrameManager::unlockFile(const string &name)
+	{
+		if (!files.count(name))
+			files[name] = FileInfo();
+		
+		files[name].unlock();
+	}
 	void FrameManager::usePage(const string &name, int page)
 	{
 		list<string>::iterator i = find(recency.begin(), recency.end(), name);
@@ -149,12 +163,9 @@ namespace hw4
 		
 		files[name].usePage(page);
 	}
-	int FrameManager::loadPage(const string &name, int page, int lastByteQ)
+	int FrameManager::loadPage(const string &name, int byteStart, int lastByteQ)
 	{
-		if (files.count(name) && files[name].isPageLoaded(page))
-			return 0;
-		
-		int byteStart = page * sizeFrame;
+		int page = byteStart / sizeFrame;
 		int byteEnd = byteStart + sizeFrame;
 		struct stat buffer;
 		int status = lstat(name.c_str(), &buffer);
@@ -163,6 +174,9 @@ namespace hw4
 		
 		if (buffer.st_size <= byteStart || lastByteQ > buffer.st_size)
 			return 2;
+		
+		if (files.count(name) && files[name].isPageLoaded(page))
+			return 0;
 		
 		if (buffer.st_size < byteEnd)
 			byteEnd = buffer.st_size;
@@ -237,18 +251,23 @@ namespace hw4
 		if (status != 0)
 			return 1;
 		
-		const map<int, int> &pages = files[name].getPages();
-		
-		for (map<int, int>::const_iterator i = pages.begin(); i != pages.end(); ++i)
+		if (files.count(name) != 0)
 		{
-			cout << "[thread " << pthread_self() << "] Deallocated frame " << i->second << endl;
-			frames[i->second].lock();
-			frames[i->second].deallocate();
-			frames[i->second].unlock();
+			files[name].lock();
+			const map<int, int> &pages = files[name].getPages();
+			
+			for (map<int, int>::const_iterator i = pages.begin(); i != pages.end(); ++i)
+			{
+				cout << "[thread " << pthread_self() << "] Deallocated frame " << i->second << endl;
+				frames[i->second].lock();
+				frames[i->second].deallocate();
+				frames[i->second].unlock();
+			}
+			
+			files.erase(name);
 		}
 		
 		remove(name.c_str());
-		files.erase(name);
 		
 		return 0;
 	}
@@ -258,7 +277,7 @@ namespace hw4
 			return 2;
 		
 		int page = byteStart / sizeFrame;
-		int status = loadPage(name, page, byteEnd);
+		int status = loadPage(name, byteStart, byteEnd);
 		if (status != 0)
 			return status;
 		

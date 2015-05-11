@@ -80,6 +80,9 @@ namespace hw4
 			FrameManager();
 			~FrameManager();
 			
+			void lockFile(const string &name);
+			void unlockFile(const string &name);
+			
 			// Makes the given file the most recently used
 			void usePage(const string &name, int page);
 			/* Loads the given page of the given file

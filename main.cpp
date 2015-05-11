@@ -41,7 +41,7 @@ void *ClientThread(void *arg)
 	ThreadData data = *(ThreadData *)arg;
 	delete[] (ThreadData *)arg;
 	
-	char buffer[BUFFER_SIZE];
+	char buffer[BUFFER_SIZE + 1];
 	int n;
 	do {
 		n = recv(data.sockID, buffer, BUFFER_SIZE, 0);
@@ -54,25 +54,22 @@ void *ClientThread(void *arg)
 		//Message receive
 		else
 		{
-			char *head = strtok(buffer, "\r\n");
-			cout << "[thread " << pthread_self() << "] Rcvd: " << head << endl;
+			// Write over the newline with a null terminator
+			buffer[n] = 0;
+			cout << "[thread " << pthread_self() << "] Rcvd: " << buffer << endl;
 			
-			char *tail = buffer + strlen(head) + 2;
-			char *token = strtok(head, " ");
+			char *token = strtok(buffer, " \n");
 			
 			if (!strcmp(token, "READ"))
 			{
 				// TODO add errors if stuff is wrong
-				token = strtok(NULL, " ");
+				token = strtok(NULL, " \n");
 				string name = ".storage/" + string(token);
-				token = strtok(NULL, " ");
+				token = strtok(NULL, " \n");
 				int offset = atoi(token);
-				token = strtok(NULL, "\r\n");
+				token = strtok(NULL, " \n");
 				int length = atoi(token);
 				
-				char *rest = strchr(token, 0) + 1;
-				
-				//cout << "[thread " << pthread_self() << "] READ " << length  << " bytes from " << offset << " bytes into " << name << ": '" << rest << "'!" << endl;
 				int byteStart = offset;
 				int byteEnd = byteStart + length;
 				while (byteStart < byteEnd)
@@ -120,11 +117,14 @@ void *ClientThread(void *arg)
 					
 					byteStart += len;
 				}
+				
+				if (length == 0)
+					send(data.sockID, "ACK 0\n\n", 8, 0);
 			}
 			else if (!strcmp(token, "DELETE"))
 			{
 				// TODO add errors if stuff is wrong
-				token = strtok(NULL, "\r\n");
+				token = strtok(NULL, " \n");
 				string fileName = string(token, strlen(token));
 				string name = ".storage/" + fileName;
 				
@@ -183,37 +183,46 @@ void *ClientThread(void *arg)
 			{
 				// TODO: Add error messages for invalid arguments
 				stringstream stream;
-				token = strtok(NULL, " ");
+				token = strtok(NULL, " \n");
 				string name = ".storage/" + string(token);
-				token = strtok(NULL, " ");
+				token = strtok(NULL, " \n");
 				int bytes = atoi(token);
-				int givenBytes = strlen(tail);
 				
-				if (bytes != givenBytes)
-					stream << "ERROR: INCORRECT NUMBER OF BYTES" << endl;
+				char *tail = token + strlen(token) + 1;
+				
+				struct stat buf;
+				int status = lstat(name.c_str(), &buf);
+				
+				if (status == 0)
+				{
+					stream << "ERROR: FILE EXISTS" << endl;
+					cout << "[thread " << pthread_self() << "] Sent: ERROR FILE EXISTS" << endl;
+				}
 				else
 				{
-					struct stat buffer;
-					int status = lstat(name.c_str(), &buffer);
+					data.frameManager.lockFile(name);
 					
-					if (status == 0)
+					FILE *f = fopen(name.c_str(), "wb");
+					cout << "Tail: " << tail << endl;
+					cout << (unsigned long)tail << " : " << (unsigned long)buffer << endl;
+					int tailBytes = n - (tail - buffer);
+					cout << "Header was " << (tail - buffer) << " bytes long" << endl;
+					cout << "Got " << tailBytes << " tail bytes" << endl;
+					fwrite(tail, sizeof(char), tailBytes, f);
+					
+					if (n != 0)
 					{
-						stream << "ERROR: FILE EXISTS" << endl;
-						cout << "[thread " << pthread_self() << "] Sent: ERROR FILE EXISTS" << endl;
-					}
-					else
-					{
-						FILE* f = fopen(name.c_str(), "w");
-						fwrite(tail, sizeof(char), strlen(tail), f);
 						stream << "ACK" << endl;
-						cout << "[thread " << pthread_self() << "] Transferred file (" << strlen(tail) << " bytes)" << endl;
+						cout << "[thread " << pthread_self() << "] Transferred file (" << bytes << " bytes)" << endl;
 						cout << "[thread " << pthread_self() << "] Sent: ACK" << endl;
-						fclose(f);
 					}
+					fclose(f);
+					
+					data.frameManager.unlockFile(name);
 				}
-
+				
 				string message = stream.str();
-
+				
 				send(data.sockID, message.c_str(), message.size(), 0);
 			}
 		}
